@@ -103,7 +103,30 @@ def year_midpoint(year_label: str) -> float:
     return (start + end) / 2
 
 
-def tidy(raw: pd.DataFrame | None = None, drop_unreliable: bool = True) -> pd.DataFrame:
+def dropped_report(dropped: pd.DataFrame, total_rows: int) -> str:
+    """Human-readable summary of the rows ``tidy`` removed."""
+    lines = [f"tidy(): dropped {len(dropped)} of {total_rows} rows"]
+    if dropped.empty:
+        return lines[0]
+    by_reason = dropped["drop_reason"].value_counts()
+    for reason, count in by_reason.items():
+        lines.append(f"  {count:>4}  {reason}")
+    by_group = (
+        dropped.groupby(["group_kind", "group_label"])
+        .size()
+        .sort_values(ascending=False)
+    )
+    lines.append("  by group:")
+    for (kind, label), count in by_group.items():
+        lines.append(f"  {count:>4}  {kind}: {label}")
+    return "\n".join(lines)
+
+
+def tidy(
+    raw: pd.DataFrame | None = None,
+    drop_unreliable: bool = True,
+    report: bool = True,
+) -> pd.DataFrame:
     """Reshape the published table into one row per (group, survey cycle).
 
     Rows without an ESTIMATE (suppressed cells) are always dropped. Rows the
@@ -122,14 +145,26 @@ def tidy(raw: pd.DataFrame | None = None, drop_unreliable: bool = True) -> pd.Da
 
     frame = frame.drop(columns=DROPPED_COLUMNS, errors="ignore").rename(columns=RENAMES)
 
-    frame = frame.dropna(subset=["estimate"])
-    if drop_unreliable:
-        frame = frame[frame["flag"] != "*"]
+    total_rows = len(frame)
+    no_estimate = frame["estimate"].isna()
+    unreliable = (frame["flag"] == "*") & ~no_estimate
+    if not drop_unreliable:
+        unreliable &= False
+
+    dropped = frame[no_estimate | unreliable].copy()
+    dropped["drop_reason"] = "no estimate (suppressed)"
+    dropped.loc[unreliable[dropped.index], "drop_reason"] = "flagged * (unreliable)"
+    frame = frame[~(no_estimate | unreliable)]
 
     frame = frame[COLUMN_ORDER]
-    return frame.sort_values(["group_kind", "group_label", "year_mid"]).reset_index(
+    frame = frame.sort_values(["group_kind", "group_label", "year_mid"]).reset_index(
         drop=True
     )
+    frame.attrs["dropped"] = dropped.reset_index(drop=True)
+    if report:
+        print(dropped_report(dropped, total_rows))
+
+    return frame
 
 
 def series_for(frame: pd.DataFrame, group_kind: str, group_label: str) -> pd.DataFrame:

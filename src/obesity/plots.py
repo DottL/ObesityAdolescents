@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -129,9 +126,7 @@ def save_all(frame, outdir: Path | None = None) -> list[Path]:
         plt.close(fig)
         written.append(path)
 
-    ax = plot_groups(
-        frame, "sex", title="Obesity prevalence by sex, ages 2-19 (not stacked)"
-    )
+    ax = plot_groups(frame, "sex", title="Obesity prevalence by sex, ages 2-19")
     _save(ax.figure, "sex_trends.png")
 
     ax = plot_groups(
